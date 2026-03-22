@@ -1,0 +1,109 @@
+clc
+clear all
+close all
+
+% Initialize environment and constants
+env.constants = struct('r1', 1.5, 'r2', 1, 'r3', 0.01, ...
+    'k1', 1, 'k2', 1, 'k3', 0.3, ...
+    'a12', 1, 'a13', 0.5, 'a21', 1, 'a31', 1, ...
+    'Nc', 0.5, 'Ng', 0.1, 'Nw', 0.2, ...
+    'd3', 0.2, 'gamma', 0.082, 'sigma', 0.9, 'epsilon', 0.0008, ...
+    'beta1', 0.2, 'beta2', 0.1, 'beta3', 0.001, 'beta4', 0.001);
+% Initialize actor and critic weights
+actorWeights = ones(6,2)/2; 
+criticWeights = zeros(6,1);
+initial_actorWeights = actorWeights;
+initial_criticWeights = criticWeights;
+
+% Define hyperparameters
+learningRate = 0.0001;
+gamma2 = 0.99;  % Discount factor
+clipRatio = 0.1;  % Clipping ratio for PPO
+explorationNoise = 0.1;  % Exploration noise standard deviation
+gradientClipValue = 1.0; % Value for gradient clipping
+entropyCoeff = 0.1; % Entropy regularization coefficient
+
+% Training loop
+numEpisodes = 1;
+numSteps = 201;
+
+% Storage for plotting
+allStates = [];
+allActions = [];
+
+for episode = 1:numEpisodes
+    % Collect trajectories
+    [states, actions, rewards, nextStates] = collectTrajectories(env, @(s) policy(s, actorWeights, explorationNoise), numSteps);
+    
+    % Store states and actions for plotting
+    allStates = [allStates; states];
+    allActions = [allActions; actions];
+    
+    % Compute advantages and returns
+    values = criticWeights' * states';
+    [advantages, returns] = computeAdvantages(rewards, values, gamma2);
+   
+    % Update actor and critic networks with smooth SMC
+    [actorWeights, criticWeights] = updateNetworks_with_SMC(states, actions, advantages, returns, actorWeights, criticWeights, learningRate, clipRatio, gradientClipValue, entropyCoeff);
+    
+    % Print training progress and state information
+    fprintf('Episode %d: Total Reward = %f\n', episode, sum(rewards));
+    fprintf('Tumor Cells: %f, Healthy Cells: %f, Radiation: %f, Chemotherapy: %f\n', states(end, 1), states(end, 2), states(end, 5), states(end, 4));
+end
+
+dt = 1;
+time = 0:dt:numSteps-1;
+% Plotting
+figure;
+subplot(2, 2, 1);
+plot(time, allStates(:, 5), 'r', 'DisplayName', 'Chemotherapy (P)', 'LineWidth',2);
+hold on;
+xlabel('Time (Days)');
+ylabel('Drug Dosage (mg/day)');
+title('Chemotherapeutic Drug Dosage (P) Over Time');
+
+subplot(2, 2, 2);
+plot(time, allStates(:, 4), 'g', 'DisplayName', 'Radiation (U)', 'LineWidth',2);
+xlabel('Time (Days)');
+ylabel('Radiation (Gy/day)');
+title('Radiation Dosage (U) Over Time');
+
+subplot(2, 2, 3);
+plot(time, allActions(:, 2), 'm', 'DisplayName', 'Chemotherapeutic Input (q)', 'LineWidth',2);
+xlabel('Time (Days)');
+ylabel('Drug Dosage (mg)');
+title('Control Input (alpha)');
+
+subplot(2, 2, 4);
+plot(time, allActions(:, 1), 'c', 'DisplayName', 'Radiation Input (?)', 'LineWidth',2);
+xlabel('Time (Days)');
+ylabel('Radiation (Gy)');
+title('Control Input (q)');
+
+figure;
+subplot(3,1,1);
+plot(time, allStates(:, 1), 'r', 'DisplayName', 'Tumor Cells (T)', 'LineWidth',2);
+hold on;
+plot(time, allStates(:, 2), 'g', 'DisplayName', 'Healthy Cells (N)', 'LineWidth',2);
+plot(time, allStates(:, 3), 'b', 'DisplayName', 'Immune Cells (I)', 'LineWidth',2);
+title('Cell Population dynamics Over Time');
+xlabel('Time (Days)');
+ylabel('Cell Population (Cells/day)');
+legend('Tumor Cells (T)', 'Healthy Cells (N)', 'Immune Cells (I)')
+
+subplot(3,1,2);
+plot(time, allStates(:, 5), 'm', 'DisplayName', 'Chemotherapy (P)', 'LineWidth',2);
+legend;
+title('Chemotherapeutic Drug Concentration Over Time');
+xlabel('Time (Days)');
+ylabel('Drug Dosage (mg/day)');
+legend('Chemotherapy (P)') 
+
+subplot(3,1,3);
+plot(time, allStates(:, 4), 'k', 'DisplayName', 'Radiation (U)', 'LineWidth',2);
+legend;
+title('Radiation Over Time');
+xlabel('Time (Days)');
+ylabel('Radiation (Gy/day)');
+legend('Radiation (U)')
+
